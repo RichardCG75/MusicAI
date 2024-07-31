@@ -44,13 +44,3 @@ def play_melody(melody, speed=1.0, sample_rate=44100):
     # Play the audio data
     play_obj = sa.play_buffer(audio_data, 1, 2, sample_rate)
     play_obj.wait_done()
-
-# # Example usage
-# melody = [
-#     [57, 7], [60, 7], [62, 7], [64, 6], [67, 6], [69, 4], [71, 5], [73, 5],
-#     [76, 4], [78, 4], [80, 4], [82, 4], [85, 4], [87, 4], [89, 4], [91, 4],
-#     [94, 4], [96, 4], [94, 4], [91, 4], [89, 4], [87, 4], [85, 4], [82, 4],
-#     [80, 4], [78, 4], [76, 4], [73, 4], [71, 4], [69, 4], [67, 4], [64, 4]
-# ]
-
-# play_melody(melody, speed=2)  # Play melody with 1.5x speed

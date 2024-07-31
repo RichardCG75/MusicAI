@@ -1,17 +1,18 @@
 # import model
+import utils
 import play
 import data
+import random
+import model
 import numpy as np
 
 
-seq_length = 16
+seq_length = 32
+melody = model.generate_melody(model.model_pitch, model.model_duration, model.seed_sequence_pitch, model.seed_sequence_duration, seq_length)
+play.play_melody(melody)
 
-seed_sequence = [
-    [89,4], [88,4], [89,4], [88,4], [89,4], [88,4], [86,8], [88,4],
-    [84,4], [86,4], [88,4], [89,8], [86,4], [89,4], [88,4], [86,8]
-    ] 
-# num_notes_to_generate = 20
-# melody = model.generate_melody(model, seed_sequence, seq_length, num_notes_to_generate)
-# play.play_melody(melody, 3)
+random_melody = random.choice(data.songs)
+random_melody = utils.apply_counterpoint_melodic_rules(random_melody)
+random_melody = utils.apply_counterpoint_rythm_rules(random_melody)
 
-play.play_melody(seed_sequence, 3)
+play.play_melody(random.choice(data.songs), speed=2)

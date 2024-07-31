@@ -1,118 +1,100 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, TimeDistributed
+from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.losses import MeanSquaredError
 import data
-import play
 
-# Define custom loss function with specific penalties for undesired tone differences
-def custom_loss(y_true, y_pred):
-    mse_loss = MeanSquaredError()(y_true, y_pred)
-    y_true_tones = y_true[:, :, 0]
-    y_pred_tones = y_pred[:, :, 0]
-    tone_diffs = tf.abs(y_true_tones - y_pred_tones)
-    
-    penalties = tf.where(
-        tone_diffs == 1, 10.0, 
-        tf.where(
-            tone_diffs == 2, 10.0, 
-            tf.where(
-                tone_diffs == 10, 10.0, 
-                tf.where(
-                    tone_diffs == 11, 10.0, 
-                    tf.where(
-                        tone_diffs <= 4, 1.0, 
-                        tf.where(
-                            tone_diffs <= 6, 0.5, 
-                            tf.where(
-                                tone_diffs <= 8, 0.2, 
-                                0.1
-                            )
-                        )
-                    )
-                )
-            )
-        )
-    )
-    
-    weighted_mse_loss = mse_loss * penalties
-    return tf.reduce_mean(weighted_mse_loss)
-
-# Function to create sequences from data
-def create_sequences(data, seq_length):
-    X, y = [], []
-    for i in range(len(data) - seq_length):
-        X.append(data[i:i+seq_length])
-        y.append(data[i+seq_length])
-    return np.array(X), np.array(y)
-
-# Example data preprocessing
+# Data preprocessing
 songs = data.songs
-notes = [note for song in songs for note in song]
-notes = np.array(notes)
+# Normalize pitch (0 to 1) and one-hot encode duration (0 to 7)
+def preprocess_data(songs):
+    pitch_sequences = []
+    duration_sequences = []
+    for song in songs:
+        for note, duration in song:
+            pitch = (note - 36) / 60  # Normalize to 0-1 range
+            duration_encoded = to_categorical(duration, num_classes=8)
+            pitch_sequences.append([pitch])
+            duration_sequences.append(duration_encoded)
+    return np.array(pitch_sequences), np.array(duration_sequences)
 
-notes[:, 0] = (notes[:, 0] - 36) / (120 - 36)
-durations = to_categorical(notes[:, 1], num_classes=8)
-notes = np.hstack((notes[:, [0]], durations))
+pitch_sequences, duration_sequences = preprocess_data(songs)
 
-seq_length = 10
-X, y = create_sequences(notes, seq_length)
-X = X.reshape((X.shape[0], seq_length, X.shape[2]))
-y = y.reshape((y.shape[0], 1, y.shape[1]))
+# Prepare input and output sequences
+X_pitch = []
+X_duration = []
+y_pitch = []
+y_duration = []
+sequence_length = 4
 
-model = Sequential([
-    LSTM(128, input_shape=(seq_length, X.shape[2]), return_sequences=True),
-    LSTM(128, return_sequences=True),
-    TimeDistributed(Dense(9, activation='linear'))
+for i in range(len(pitch_sequences) - sequence_length):
+    X_pitch.append(pitch_sequences[i:i + sequence_length])
+    X_duration.append(duration_sequences[i:i + sequence_length])
+    y_pitch.append(pitch_sequences[i + sequence_length])
+    y_duration.append(duration_sequences[i + sequence_length])
+
+X_pitch = np.array(X_pitch)
+X_duration = np.array(X_duration)
+y_pitch = np.array(y_pitch)
+y_duration = np.array(y_duration)
+
+# Build the model for pitch
+model_pitch = Sequential([
+    LSTM(128, input_shape=(sequence_length, 1), return_sequences=True),
+    Dropout(0.2),
+    LSTM(128),
+    Dropout(0.2),
+    Dense(128, activation='relu'),
+    Dense(1, activation='linear')  # Output pitch
 ])
 
-model.compile(optimizer='adam', loss=custom_loss)
-model.summary()
-model.fit(X, y, epochs=5, batch_size=64)
+model_pitch.compile(optimizer='adam', loss='mse')
 
-def preprocess_seed_sequence(seed_sequence):
-    seed_sequence = np.array(seed_sequence)
-    seed_sequence[:, 0] = (seed_sequence[:, 0] - 36) / (120 - 36)
+# Train the model for pitch
+history_pitch = model_pitch.fit(X_pitch, y_pitch, epochs=100, batch_size=64, validation_split=0.2)
 
-    valid_durations = seed_sequence[:, 1].astype(int)
-    if np.any(valid_durations < 0) or np.any(valid_durations > 7):
-        raise ValueError("Seed sequence durations must be in the range 0-7.")
+# Model for duration
+model_duration = Sequential([
+    LSTM(128, input_shape=(sequence_length, 8), return_sequences=True),
+    Dropout(0.2),
+    LSTM(128),
+    Dropout(0.2),
+    Dense(128, activation='relu'),
+    Dense(8, activation='softmax')  # Output duration
+])
 
-    durations = to_categorical(valid_durations, num_classes=8)
-    seed_sequence = np.hstack((seed_sequence[:, [0]], durations))
+model_duration.compile(optimizer='adam', loss='categorical_crossentropy')
 
-    return seed_sequence
+# Train the model for duration
+history_duration = model_duration.fit(X_duration, y_duration, epochs=100, batch_size=64, validation_split=0.2)
 
-def generate_melody(model, seed_sequence, seq_length, num_notes_to_generate):
-    generated_notes = []
-    current_sequence = preprocess_seed_sequence(seed_sequence).copy()
+# Function to generate a new melody
+def generate_melody(model_pitch, model_duration, seed_sequence_pitch, seed_sequence_duration, length):
+    generated = []
+    current_sequence_pitch = seed_sequence_pitch
+    current_sequence_duration = seed_sequence_duration
 
-    for _ in range(num_notes_to_generate):
-        predictions = model.predict(np.expand_dims(current_sequence, axis=0))
-        next_note = predictions[0, -1]
+    for _ in range(length):
+        # Predict pitch
+        pitch_pred = model_pitch.predict(np.array([current_sequence_pitch]))[0, -1]
+        pitch_pred = np.squeeze(pitch_pred)  # Ensure pitch_pred is a scalar
+        pitch_pred = pitch_pred * 60 + 36  # Denormalize
 
-        tone_normalized = np.clip(next_note[0], 0, 1)
-        next_note[0] = tone_normalized
+        # Predict duration
+        duration_pred = model_duration.predict(np.array([current_sequence_duration]))[0, -1]
+        duration_pred = np.argmax(duration_pred)  # Decode one-hot
 
-        generated_notes.append(next_note)
-        current_sequence = np.roll(current_sequence, shift=-1, axis=0)
-        current_sequence[-1] = next_note
+        generated.append([int(pitch_pred), duration_pred])
 
-    melody = []
-    for note in generated_notes:
-        tone = int(note[0] * (120 - 36) + 36)
-        duration = np.argmax(note[1:])
-        melody.append([tone, duration])
-    
-    return melody
+        # Update current sequence
+        pitch_norm = (pitch_pred - 36) / 60
+        duration_encoded = to_categorical(duration_pred, num_classes=8)
+        current_sequence_pitch = np.append(current_sequence_pitch[1:], [[pitch_norm]], axis=0)
+        current_sequence_duration = np.append(current_sequence_duration[1:], [duration_encoded], axis=0)
 
-seed_sequence = [
-    [89, 4], [88, 4], [89, 4], [88, 4], [89, 4], [88, 4], [86, 4], [88, 4],
-    [84, 4], [86, 4]
-]
-num_notes_to_generate = 20
-melody = generate_melody(model, seed_sequence, seq_length, num_notes_to_generate)
-print(melody)
-play.play_melody(melody, 3)
+    return generated
+
+# Seed sequence (last part of a song)
+seed_sequence_pitch = X_pitch[-1]
+seed_sequence_duration = X_duration[-1]
