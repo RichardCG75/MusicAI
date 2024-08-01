@@ -1,6 +1,7 @@
 import numpy as np
 import simpleaudio as sa
 
+# Define the function to generate a sine wave
 def generate_sine_wave(frequency, duration, sample_rate=44100):
     """
     Generate a sine wave for a given frequency and duration.

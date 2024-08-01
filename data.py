@@ -1,4 +1,4 @@
-# Data to train the model
+# Data to train the ML Model
 
 songs = [
     # Happy Birthday

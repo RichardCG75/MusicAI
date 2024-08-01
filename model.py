@@ -5,6 +5,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.utils import to_categorical
 import data
 
+# Model
 # Data preprocessing
 songs = data.songs
 # Normalize pitch (0 to 1) and one-hot encode duration (0 to 7)

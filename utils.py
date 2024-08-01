@@ -1,6 +1,7 @@
 import random
 
 
+# Function to apply counterpoint rules to the melody
 def apply_counterpoint_rythm_rules(arr):
     for sublist in arr:
         sublist[1] = random.choice([4, 6, 8, 3,2])
